@@ -39,6 +39,29 @@ type ClientSecretReference struct {
 	Key string `json:"key"`
 }
 
+// ClientFlows selects which OAuth 2.0 flows a client may use. A flow that is
+// omitted is left as it is in Keycloak; true allows it and false disallows it.
+type ClientFlows struct {
+	// StandardFlow allows the authorization code flow, the browser sign-in most
+	// clients use.
+	//
+	// +optional
+	StandardFlow *bool `json:"standardFlow,omitempty"`
+
+	// DirectAccessGrants allows the resource owner password credentials grant,
+	// in which the client itself collects and sends a user's username and
+	// password.
+	//
+	// +optional
+	DirectAccessGrants *bool `json:"directAccessGrants,omitempty"`
+
+	// Implicit allows the implicit flow, which returns tokens directly from the
+	// authorization endpoint.
+	//
+	// +optional
+	Implicit *bool `json:"implicit,omitempty"`
+}
+
 // ClientSpec defines the desired state of a Client: one project
 // OIDC client named by its URL, its redirect/web-origin configuration, the
 // client roles it defines, the group→groups-claim mapping (via client roles),
@@ -127,6 +150,13 @@ type ClientSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
 	BaseURL *string `json:"baseUrl,omitempty"`
+
+	// Flows selects which OAuth 2.0 flows the client may use. When omitted, or
+	// for any flow it does not name, the client's setting is left as it is in
+	// Keycloak.
+	//
+	// +optional
+	Flows *ClientFlows `json:"flows,omitempty"`
 
 	// ClientRoles optionally lists the client roles defined on this client — the
 	// primitive owner/editor/viewer triad scoped to this one client. A role group

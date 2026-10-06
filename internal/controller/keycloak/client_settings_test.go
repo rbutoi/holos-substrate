@@ -139,3 +139,48 @@ func TestClientReconcileOmittedNameAndURLsLeftAlone(t *testing.T) {
 		t.Errorf("an omitted field triggered an update; calls = %v", fake.calls)
 	}
 }
+
+func TestClientReconcileFlows(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-flows"
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.Flows = &keycloakv1alpha1.ClientFlows{
+			StandardFlow:       ptr.To(true),
+			DirectAccessGrants: ptr.To(false),
+		}
+	})
+
+	fake := newFakeClient()
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	uuid := fake.clients[settingsClientID(ns)]
+	got := fake.clientObject(uuid)
+	if !ptr.Deref(got.StandardFlowEnabled, false) || ptr.Deref(got.DirectAccessGrantsEnabled, true) {
+		t.Errorf("created flows (standard, directAccessGrants) = (%v, %v), want (true, false)",
+			ptr.Deref(got.StandardFlowEnabled, false), ptr.Deref(got.DirectAccessGrantsEnabled, true))
+	}
+	if got.ImplicitFlowEnabled != nil {
+		t.Errorf("an unmanaged flow was sent on create: implicit = %v", *got.ImplicitFlowEnabled)
+	}
+
+	// Direct access grants switched on in the console is put back, and the
+	// unmanaged implicit flow stays as the console set it.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		c.DirectAccessGrantsEnabled = ptr.To(true)
+		c.ImplicitFlowEnabled = ptr.To(true)
+	})
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got = fake.clientObject(uuid)
+	if ptr.Deref(got.DirectAccessGrantsEnabled, true) {
+		t.Errorf("direct access grants after drift = true, want false")
+	}
+	if !ptr.Deref(got.ImplicitFlowEnabled, false) {
+		t.Errorf("the unmanaged implicit flow was changed from the console's value")
+	}
+}

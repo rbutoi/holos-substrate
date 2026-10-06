@@ -209,6 +209,29 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+              flows:
+                description: |-
+                  Flows selects which OAuth 2.0 flows the client may use. When omitted, or
+                  for any flow it does not name, the client's setting is left as it is in
+                  Keycloak.
+                properties:
+                  directAccessGrants:
+                    description: |-
+                      DirectAccessGrants allows the resource owner password credentials grant,
+                      in which the client itself collects and sends a user's username and
+                      password.
+                    type: boolean
+                  implicit:
+                    description: |-
+                      Implicit allows the implicit flow, which returns tokens directly from the
+                      authorization endpoint.
+                    type: boolean
+                  standardFlow:
+                    description: |-
+                      StandardFlow allows the authorization code flow, the browser sign-in most
+                      clients use.
+                    type: boolean
+                type: object
               instanceRef:
                 description: |-
                   InstanceRef references the Instance this client is provisioned in. A

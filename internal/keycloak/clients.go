@@ -38,6 +38,11 @@ type ClientFields struct {
 	RootURL *string
 	// BaseURL, when non-nil, sets the client's base URL.
 	BaseURL *string
+	// StandardFlowEnabled, DirectAccessGrantsEnabled and ImplicitFlowEnabled,
+	// when non-nil, allow or disallow the corresponding OAuth 2.0 flow.
+	StandardFlowEnabled       *bool
+	DirectAccessGrantsEnabled *bool
+	ImplicitFlowEnabled       *bool
 	// Attributes, when non-nil, MERGES the given attribute keys onto the client's
 	// existing attributes map (rather than replacing it), so a managed attribute
 	// such as the PKCE code-challenge method is set without clobbering unmanaged
@@ -79,6 +84,15 @@ func (f ClientFields) apply(raw RawClient) {
 	}
 	if f.BaseURL != nil {
 		raw["baseUrl"] = *f.BaseURL
+	}
+	if f.StandardFlowEnabled != nil {
+		raw["standardFlowEnabled"] = *f.StandardFlowEnabled
+	}
+	if f.DirectAccessGrantsEnabled != nil {
+		raw["directAccessGrantsEnabled"] = *f.DirectAccessGrantsEnabled
+	}
+	if f.ImplicitFlowEnabled != nil {
+		raw["implicitFlowEnabled"] = *f.ImplicitFlowEnabled
 	}
 	if f.Attributes != nil || len(f.RemoveAttributes) > 0 {
 		attrs, _ := raw["attributes"].(map[string]any)
@@ -138,6 +152,12 @@ type OIDCClient struct {
 	// BaseURL is the URL Keycloak links to when sending a user back to the
 	// client. omitempty so an unset base URL is not sent on create.
 	BaseURL string `json:"baseUrl,omitempty"`
+	// StandardFlowEnabled, DirectAccessGrantsEnabled and ImplicitFlowEnabled
+	// report which OAuth 2.0 flows the client allows. Pointers with omitempty so
+	// an unmanaged flow is not sent on create and keeps Keycloak's default.
+	StandardFlowEnabled       *bool `json:"standardFlowEnabled,omitempty"`
+	DirectAccessGrantsEnabled *bool `json:"directAccessGrantsEnabled,omitempty"`
+	ImplicitFlowEnabled       *bool `json:"implicitFlowEnabled,omitempty"`
 	// Attributes carries the client's attribute map (e.g. the PKCE
 	// pkce.code.challenge.method). Set on create to program managed attributes;
 	// omitempty so an unset map is not sent.

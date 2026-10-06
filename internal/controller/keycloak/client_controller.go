@@ -312,7 +312,17 @@ func (r *ClientReconciler) desiredClient(kclient *keycloakv1alpha1.Client) keycl
 	if public {
 		c.Attributes = map[string]string{keycloak.PKCECodeChallengeMethodAttr: keycloak.PKCEMethodS256}
 	}
+	c.StandardFlowEnabled, c.DirectAccessGrantsEnabled, c.ImplicitFlowEnabled = specFlows(kclient)
 	return c
+}
+
+// specFlows returns the spec's OAuth 2.0 flow settings, each nil when the spec
+// leaves that flow unmanaged.
+func specFlows(kclient *keycloakv1alpha1.Client) (standard, directAccessGrants, implicit *bool) {
+	if f := kclient.Spec.Flows; f != nil {
+		return f.StandardFlow, f.DirectAccessGrants, f.Implicit
+	}
+	return nil, nil, nil
 }
 
 // updateClient converges the managed fields (type, redirect URIs, web origins,
@@ -349,6 +359,7 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 		// adopted client that previously required PKCE converges to no-PKCE.
 		fields.RemoveAttributes = []string{keycloak.PKCECodeChallengeMethodAttr}
 	}
+	fields.StandardFlowEnabled, fields.DirectAccessGrantsEnabled, fields.ImplicitFlowEnabled = specFlows(kclient)
 	if existing != nil && clientMatchesDesired(existing, kclient) {
 		return false, nil
 	}
@@ -376,6 +387,12 @@ func clientMatchesDesired(existing *keycloak.OIDCClient, kclient *keycloakv1alph
 		!optionalMatches(kclient.Spec.BaseURL, existing.BaseURL) {
 		return false
 	}
+	standard, directAccessGrants, implicit := specFlows(kclient)
+	if !optionalPtrMatches(standard, existing.StandardFlowEnabled) ||
+		!optionalPtrMatches(directAccessGrants, existing.DirectAccessGrantsEnabled) ||
+		!optionalPtrMatches(implicit, existing.ImplicitFlowEnabled) {
+		return false
+	}
 	if public {
 		return existing.Attributes[keycloak.PKCECodeChallengeMethodAttr] == keycloak.PKCEMethodS256
 	}
@@ -387,6 +404,12 @@ func clientMatchesDesired(existing *keycloak.OIDCClient, kclient *keycloakv1alph
 // value is unmanaged and always matches, a set one must equal the live value.
 func optionalMatches[T comparable](want *T, got T) bool {
 	return want == nil || *want == got
+}
+
+// optionalPtrMatches is optionalMatches for a live value that Keycloak may not
+// report: an unreported live value never satisfies a set spec value.
+func optionalPtrMatches[T comparable](want, got *T) bool {
+	return want == nil || ptr.Equal(want, got)
 }
 
 func sameStringSet(a, b []string) bool {

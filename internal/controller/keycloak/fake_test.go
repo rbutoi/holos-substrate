@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/holos-run/holos-substrate/internal/keycloak"
 )
 
@@ -652,6 +654,15 @@ func (f *fakeClient) UpdateClientFields(ctx context.Context, clientUUID string, 
 		}
 		if fields.BaseURL != nil {
 			current.BaseURL = *fields.BaseURL
+		}
+		if fields.StandardFlowEnabled != nil {
+			current.StandardFlowEnabled = ptr.To(*fields.StandardFlowEnabled)
+		}
+		if fields.DirectAccessGrantsEnabled != nil {
+			current.DirectAccessGrantsEnabled = ptr.To(*fields.DirectAccessGrantsEnabled)
+		}
+		if fields.ImplicitFlowEnabled != nil {
+			current.ImplicitFlowEnabled = ptr.To(*fields.ImplicitFlowEnabled)
 		}
 		if current.Attributes == nil {
 			current.Attributes = map[string]string{}
