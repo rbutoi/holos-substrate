@@ -20,6 +20,59 @@ const (
 	ClientTypeConfidential ClientType = "confidential"
 )
 
+// PKCEMethod is the PKCE code-challenge method a client requires on the
+// authorization code flow.
+//
+// +kubebuilder:validation:Enum=S256;None
+type PKCEMethod string
+
+const (
+	// PKCEMethodS256 requires PKCE with the SHA-256 code-challenge method.
+	PKCEMethodS256 PKCEMethod = "S256"
+	// PKCEMethodNone does not require PKCE.
+	PKCEMethodNone PKCEMethod = "None"
+)
+
+// ClientServiceAccount is a client's service account, which lets the client
+// authenticate as itself with the client credentials grant, and the roles it
+// holds. Both role lists are complete: a role the service account holds but the
+// lists do not name is removed, except the realm's default role, which Keycloak
+// grants every user.
+type ClientServiceAccount struct {
+	// RealmRoles are the realm roles granted to the service account.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	RealmRoles []string `json:"realmRoles,omitempty"`
+
+	// ClientRoles are the client roles granted to the service account, each
+	// named by the clientId of the client that defines it.
+	//
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=64
+	ClientRoles []ServiceAccountClientRole `json:"clientRoles,omitempty"`
+}
+
+// ServiceAccountClientRole names one client role to grant a service account.
+type ServiceAccountClientRole struct {
+	// ClientID is the Keycloak clientId of the client that defines the role,
+	// for example realm-management.
+	//
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	ClientID string `json:"clientId"`
+
+	// Role is the name of the client role.
+	//
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	Role string `json:"role"`
+}
+
 // ClientSecretReference names where a confidential client's generated client
 // secret is delivered. The reconciler writes a generate-once, create-if-absent
 // Secret in the resource's own namespace per the secret-handling guardrail — it
@@ -75,6 +128,9 @@ type ClientFlows struct {
 // claim (repo precedent in holos/components/keycloak/realm-config/buildplan.cue).
 //
 // +kubebuilder:validation:XValidation:rule="self.type == 'confidential' ? has(self.secretRef) : !has(self.secretRef)",message="secretRef is required for a confidential client and forbidden for a public client"
+// +kubebuilder:validation:XValidation:rule="!(self.type == 'public' && has(self.pkceMethod) && self.pkceMethod == 'None')",message="a public client must require PKCE; pkceMethod None is only allowed for a confidential client"
+// +kubebuilder:validation:XValidation:rule="!has(self.serviceAccount) || self.type == 'confidential'",message="serviceAccount is only allowed for a confidential client"
+// +kubebuilder:validation:XValidation:rule="!has(self.defaultClientScopes) || !has(self.optionalClientScopes) || self.defaultClientScopes.all(s, !(s in self.optionalClientScopes))",message="a client scope cannot be both a default and an optional scope"
 type ClientSpec struct {
 	// ClientID is the Keycloak client ID, named by its URL (e.g.
 	// https://quay.holos.internal). It is immutable: it is the client's durable
@@ -117,6 +173,18 @@ type ClientSpec struct {
 	// +listType=set
 	WebOrigins []string `json:"webOrigins,omitempty"`
 
+	// PostLogoutRedirectURIs are the URIs Keycloak may send a user back to after
+	// they sign out, when the client names one in its logout request. When
+	// omitted, the client's post-logout redirect URIs are left as they are in
+	// Keycloak.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=2048
+	PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris,omitempty"`
+
 	// Description is free text propagated to the Keycloak client's native
 	// Description attribute. When omitted the client's description converges to
 	// empty (the reconciler sends the spec value unconditionally on update, so a
@@ -157,6 +225,48 @@ type ClientSpec struct {
 	//
 	// +optional
 	Flows *ClientFlows `json:"flows,omitempty"`
+
+	// PKCEMethod is the PKCE code-challenge method the client requires on the
+	// authorization code flow: S256 requires PKCE, and None does not. When
+	// omitted, a public client requires S256 and a confidential client does not
+	// require PKCE. A public client cannot be set to None, because without a
+	// client secret PKCE is what protects its authorization codes.
+	//
+	// +optional
+	PKCEMethod PKCEMethod `json:"pkceMethod,omitempty"`
+
+	// ServiceAccount, when set, enables the client's service account and grants
+	// it exactly the listed roles. Only a confidential client can have one. When
+	// omitted, the client's service account and its roles are left as they are in
+	// Keycloak.
+	//
+	// +optional
+	ServiceAccount *ClientServiceAccount `json:"serviceAccount,omitempty"`
+
+	// DefaultClientScopes are the client scopes added to every token the client
+	// requests, by name. The list is complete: a default scope the client has but
+	// the list does not name is removed. When omitted, the client's default
+	// scopes are left as they are in Keycloak.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	DefaultClientScopes []string `json:"defaultClientScopes,omitempty"`
+
+	// OptionalClientScopes are the client scopes added to a token only when the
+	// client requests them, by name. The list is complete: an optional scope the
+	// client has but the list does not name is removed. When omitted, the
+	// client's optional scopes are left as they are in Keycloak. A scope cannot
+	// be both default and optional.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	OptionalClientScopes []string `json:"optionalClientScopes,omitempty"`
 
 	// ClientRoles optionally lists the client roles defined on this client — the
 	// primitive owner/editor/viewer triad scoped to this one client. A role group

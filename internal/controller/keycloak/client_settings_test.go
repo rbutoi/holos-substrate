@@ -184,3 +184,145 @@ func TestClientReconcileFlows(t *testing.T) {
 		t.Errorf("the unmanaged implicit flow was changed from the console's value")
 	}
 }
+
+func TestClientReconcileConfidentialRequiresPKCE(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-confidential-pkce"
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.Type = keycloakv1alpha1.ClientTypeConfidential
+		s.SecretRef = &keycloakv1alpha1.ClientSecretReference{Name: "app-oidc", Key: "client_secret"}
+		s.PKCEMethod = keycloakv1alpha1.PKCEMethodS256
+	})
+
+	fake := newFakeClient()
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	uuid := fake.clients[settingsClientID(ns)]
+	if got := fake.clientObject(uuid).Attributes[keycloak.PKCECodeChallengeMethodAttr]; got != keycloak.PKCEMethodS256 {
+		t.Errorf("created PKCE method = %q, want %q", got, keycloak.PKCEMethodS256)
+	}
+
+	// PKCE removed in the console is put back.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		delete(c.Attributes, keycloak.PKCECodeChallengeMethodAttr)
+	})
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := fake.clientObject(uuid).Attributes[keycloak.PKCECodeChallengeMethodAttr]; got != keycloak.PKCEMethodS256 {
+		t.Errorf("PKCE method after drift = %q, want %q", got, keycloak.PKCEMethodS256)
+	}
+}
+
+// TestClientAdmissionRejects checks the CEL rules that reject a Client spec at
+// admission.
+func TestClientAdmissionRejects(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-admission"
+	makeNamespace(t, ctx, ns)
+	cases := map[string]func(*keycloakv1alpha1.ClientSpec){
+		"a public client with pkceMethod None": func(s *keycloakv1alpha1.ClientSpec) {
+			s.PKCEMethod = keycloakv1alpha1.PKCEMethodNone
+		},
+		"a public client with a service account": func(s *keycloakv1alpha1.ClientSpec) {
+			s.ServiceAccount = &keycloakv1alpha1.ClientServiceAccount{}
+		},
+		"a scope listed as both default and optional": func(s *keycloakv1alpha1.ClientSpec) {
+			s.DefaultClientScopes = []string{"email"}
+			s.OptionalClientScopes = []string{"email"}
+		},
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			kclient := &keycloakv1alpha1.Client{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, GenerateName: "app-"},
+				Spec: keycloakv1alpha1.ClientSpec{
+					ClientID:    settingsClientID(ns),
+					Type:        keycloakv1alpha1.ClientTypePublic,
+					InstanceRef: keycloakv1alpha1.InstanceReference{Name: "kc"},
+				},
+			}
+			edit(&kclient.Spec)
+			if err := shared.k8sClient.Create(ctx, kclient); err == nil {
+				t.Errorf("%s was admitted", name)
+			}
+		})
+	}
+}
+
+func TestClientReconcilePostLogoutRedirectURIs(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-post-logout"
+	want := []string{"https://app.example.com/", "https://app.example.com/signed-out"}
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.PostLogoutRedirectURIs = want
+	})
+
+	fake := newFakeClient()
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	uuid := fake.clients[settingsClientID(ns)]
+	postLogout := func() []string {
+		return keycloak.SplitPostLogoutRedirectURIs(fake.clientObject(uuid).Attributes[keycloak.PostLogoutRedirectURIsAttr])
+	}
+	if got := postLogout(); !sameStringSet(got, want) {
+		t.Errorf("created post-logout redirect URIs = %v, want %v", got, want)
+	}
+
+	// The same URIs in another order are not drift.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		c.Attributes[keycloak.PostLogoutRedirectURIsAttr] = keycloak.JoinPostLogoutRedirectURIs([]string{want[1], want[0]})
+	})
+	fake.resetCalls()
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if fake.callsContain("UpdateClient:" + uuid) {
+		t.Errorf("reordered post-logout redirect URIs triggered an update; calls = %v", fake.calls)
+	}
+
+	// A URI changed in the console is put back.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		c.Attributes[keycloak.PostLogoutRedirectURIsAttr] = "https://other.example.com/"
+	})
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := postLogout(); !sameStringSet(got, want) {
+		t.Errorf("post-logout redirect URIs after drift = %v, want %v", got, want)
+	}
+}
+
+func TestClientReconcileOmittedPostLogoutRedirectURIsLeftAlone(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-post-logout-omitted"
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.Adopt = true
+	})
+
+	fake := newFakeClient()
+	fake.seedClient(settingsClientID(ns), "plr-uuid")
+	fake.editClient("plr-uuid", func(c *keycloak.OIDCClient) {
+		c.Attributes = map[string]string{keycloak.PostLogoutRedirectURIsAttr: "https://console.example.com/"}
+	})
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	if got := fake.clientObject("plr-uuid").Attributes[keycloak.PostLogoutRedirectURIsAttr]; got != "https://console.example.com/" {
+		t.Errorf("post-logout redirect URIs = %q, want the console value left alone", got)
+	}
+}

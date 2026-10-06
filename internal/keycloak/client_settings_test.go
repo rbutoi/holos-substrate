@@ -47,3 +47,18 @@ func TestUpdateClientFieldsSetsURLsAndFlows(t *testing.T) {
 		}
 	}
 }
+
+func TestPostLogoutRedirectURIsRoundTrip(t *testing.T) {
+	uris := []string{"https://app.example.com/", "https://app.example.com/signed-out"}
+	joined := JoinPostLogoutRedirectURIs(uris)
+	if joined != "https://app.example.com/##https://app.example.com/signed-out" {
+		t.Errorf("joined = %q", joined)
+	}
+	got := SplitPostLogoutRedirectURIs(joined)
+	if len(got) != 2 || got[0] != uris[0] || got[1] != uris[1] {
+		t.Errorf("split = %v, want %v", got, uris)
+	}
+	if got := SplitPostLogoutRedirectURIs(""); got != nil {
+		t.Errorf("split of an empty value = %v, want nil", got)
+	}
+}

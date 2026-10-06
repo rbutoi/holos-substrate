@@ -127,6 +127,11 @@ type fakeClient struct {
 	// CreateClient / UpdateClientFields to simulate a Keycloak failure.
 	createClientErr error
 	updateClientErr error
+
+	// sa models client service accounts and their role mappings.
+	sa fakeServiceAccounts
+	// scopes models the realm's client scopes and each client's attachments.
+	scopes fakeClientScopes
 }
 
 // newFakeClient returns a reachable fake with the given pre-existing group
@@ -149,6 +154,8 @@ func newFakeClient(existingGroups ...string) *fakeClient {
 		createdClientAttrs:   map[string]map[string]string{},
 		lastUpdateFields:     map[string]keycloak.ClientFields{},
 		clientDescriptions:   map[string]string{},
+		sa:                   newFakeServiceAccounts(),
+		scopes:               newFakeClientScopes(),
 	}
 	for _, p := range existingGroups {
 		f.addGroup(p)
@@ -191,7 +198,7 @@ func (f *fakeClient) GetRealm(ctx context.Context) (*keycloak.Realm, error) {
 	if !f.realmReachable {
 		return nil, notFoundErr("/admin/realms/holos")
 	}
-	return &keycloak.Realm{Realm: "holos", Enabled: true}, nil
+	return &keycloak.Realm{Realm: "holos", Enabled: true, DefaultRole: &keycloak.RealmRole{ID: fakeDefaultRoleID, Name: fakeDefaultRoleName}}, nil
 }
 
 func (f *fakeClient) GetGroupByPath(ctx context.Context, path string) (*keycloak.Group, error) {
@@ -258,13 +265,15 @@ func (f *fakeClient) FindClientByClientID(ctx context.Context, clientID string) 
 	if !ok {
 		return nil, nil
 	}
+	cp := keycloak.OIDCClient{ID: id, ClientID: clientID}
 	if existing, ok := f.clientObjects[clientID]; ok {
-		cp := existing
+		cp = existing
 		cp.ID = id
 		cp.ClientID = clientID
-		return &cp, nil
 	}
-	return &keycloak.OIDCClient{ID: id, ClientID: clientID}, nil
+	cp.DefaultClientScopes = f.scopes.attachedLocked(id, keycloak.DefaultClientScopes)
+	cp.OptionalClientScopes = f.scopes.attachedLocked(id, keycloak.OptionalClientScopes)
+	return &cp, nil
 }
 
 func (f *fakeClient) GetClientRole(ctx context.Context, clientUUID, roleName string) (*keycloak.ClientRole, error) {
@@ -663,6 +672,9 @@ func (f *fakeClient) UpdateClientFields(ctx context.Context, clientUUID string, 
 		}
 		if fields.ImplicitFlowEnabled != nil {
 			current.ImplicitFlowEnabled = ptr.To(*fields.ImplicitFlowEnabled)
+		}
+		if fields.ServiceAccountsEnabled != nil {
+			current.ServiceAccountsEnabled = ptr.To(*fields.ServiceAccountsEnabled)
 		}
 		if current.Attributes == nil {
 			current.Attributes = map[string]string{}

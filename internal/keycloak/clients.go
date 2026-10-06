@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // RawClient is a Keycloak ClientRepresentation kept as an opaque field map so a
@@ -43,6 +44,9 @@ type ClientFields struct {
 	StandardFlowEnabled       *bool
 	DirectAccessGrantsEnabled *bool
 	ImplicitFlowEnabled       *bool
+	// ServiceAccountsEnabled, when non-nil, enables or disables the client's
+	// service account.
+	ServiceAccountsEnabled *bool
 	// Attributes, when non-nil, MERGES the given attribute keys onto the client's
 	// existing attributes map (rather than replacing it), so a managed attribute
 	// such as the PKCE code-challenge method is set without clobbering unmanaged
@@ -93,6 +97,9 @@ func (f ClientFields) apply(raw RawClient) {
 	}
 	if f.ImplicitFlowEnabled != nil {
 		raw["implicitFlowEnabled"] = *f.ImplicitFlowEnabled
+	}
+	if f.ServiceAccountsEnabled != nil {
+		raw["serviceAccountsEnabled"] = *f.ServiceAccountsEnabled
 	}
 	if f.Attributes != nil || len(f.RemoveAttributes) > 0 {
 		attrs, _ := raw["attributes"].(map[string]any)
@@ -158,6 +165,14 @@ type OIDCClient struct {
 	StandardFlowEnabled       *bool `json:"standardFlowEnabled,omitempty"`
 	DirectAccessGrantsEnabled *bool `json:"directAccessGrantsEnabled,omitempty"`
 	ImplicitFlowEnabled       *bool `json:"implicitFlowEnabled,omitempty"`
+	// ServiceAccountsEnabled reports whether the client has a service account,
+	// which lets it authenticate as itself with the client credentials grant.
+	ServiceAccountsEnabled *bool `json:"serviceAccountsEnabled,omitempty"`
+	// DefaultClientScopes and OptionalClientScopes are the names of the client
+	// scopes attached to the client. Read only: they are attached and detached
+	// through the client-scope endpoints, so they are not sent on create.
+	DefaultClientScopes  []string `json:"defaultClientScopes,omitempty"`
+	OptionalClientScopes []string `json:"optionalClientScopes,omitempty"`
 	// Attributes carries the client's attribute map (e.g. the PKCE
 	// pkce.code.challenge.method). Set on create to program managed attributes;
 	// omitempty so an unset map is not sent.
@@ -172,6 +187,27 @@ const PKCECodeChallengeMethodAttr = "pkce.code.challenge.method"
 
 // PKCEMethodS256 is the SHA-256 PKCE code-challenge method value.
 const PKCEMethodS256 = "S256"
+
+// PostLogoutRedirectURIsAttr is the Keycloak client-attribute key holding the
+// client's post-logout redirect URIs, joined with postLogoutRedirectURIsSeparator.
+const PostLogoutRedirectURIsAttr = "post.logout.redirect.uris"
+
+// postLogoutRedirectURIsSeparator separates the URIs in PostLogoutRedirectURIsAttr.
+const postLogoutRedirectURIsSeparator = "##"
+
+// JoinPostLogoutRedirectURIs encodes uris as the PostLogoutRedirectURIsAttr value.
+func JoinPostLogoutRedirectURIs(uris []string) string {
+	return strings.Join(uris, postLogoutRedirectURIsSeparator)
+}
+
+// SplitPostLogoutRedirectURIs decodes a PostLogoutRedirectURIsAttr value. An
+// empty value is no URIs.
+func SplitPostLogoutRedirectURIs(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, postLogoutRedirectURIsSeparator)
+}
 
 // ProtocolMapper is the subset of a client protocol-mapper representation the
 // reconcilers read back and create.

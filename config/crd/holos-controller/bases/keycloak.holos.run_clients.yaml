@@ -182,6 +182,19 @@ spec:
                 - message: clientRoles on a Client may not set clientId; a client
                     defines roles on itself (use clientRef naming this client)
                   rule: self.all(r, !has(r.clientId))
+              defaultClientScopes:
+                description: |-
+                  DefaultClientScopes are the client scopes added to every token the client
+                  requests, by name. The list is complete: a default scope the client has but
+                  the list does not name is removed. When omitted, the client's default
+                  scopes are left as they are in Keycloak.
+                items:
+                  maxLength: 255
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               deletionPolicy:
                 description: |-
                   DeletionPolicy controls how the controller handles the Keycloak client when
@@ -258,6 +271,44 @@ spec:
                 x-kubernetes-validations:
                 - message: instanceRef is immutable
                   rule: self == oldSelf
+              optionalClientScopes:
+                description: |-
+                  OptionalClientScopes are the client scopes added to a token only when the
+                  client requests them, by name. The list is complete: an optional scope the
+                  client has but the list does not name is removed. When omitted, the
+                  client's optional scopes are left as they are in Keycloak. A scope cannot
+                  be both default and optional.
+                items:
+                  maxLength: 255
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
+              pkceMethod:
+                description: |-
+                  PKCEMethod is the PKCE code-challenge method the client requires on the
+                  authorization code flow: S256 requires PKCE, and None does not. When
+                  omitted, a public client requires S256 and a confidential client does not
+                  require PKCE. A public client cannot be set to None, because without a
+                  client secret PKCE is what protects its authorization codes.
+                enum:
+                - S256
+                - None
+                type: string
+              postLogoutRedirectUris:
+                description: |-
+                  PostLogoutRedirectURIs are the URIs Keycloak may send a user back to after
+                  they sign out, when the client names one in its logout request. When
+                  omitted, the client's post-logout redirect URIs are left as they are in
+                  Keycloak.
+                items:
+                  maxLength: 2048
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               redirectUris:
                 description: RedirectURIs are the allowed OAuth2 redirect URIs for
                   the client.
@@ -295,6 +346,51 @@ spec:
                 - key
                 - name
                 type: object
+              serviceAccount:
+                description: |-
+                  ServiceAccount, when set, enables the client's service account and grants
+                  it exactly the listed roles. Only a confidential client can have one. When
+                  omitted, the client's service account and its roles are left as they are in
+                  Keycloak.
+                properties:
+                  clientRoles:
+                    description: |-
+                      ClientRoles are the client roles granted to the service account, each
+                      named by the clientId of the client that defines it.
+                    items:
+                      description: ServiceAccountClientRole names one client role
+                        to grant a service account.
+                      properties:
+                        clientId:
+                          description: |-
+                            ClientID is the Keycloak clientId of the client that defines the role,
+                            for example realm-management.
+                          maxLength: 255
+                          minLength: 1
+                          type: string
+                        role:
+                          description: Role is the name of the client role.
+                          maxLength: 255
+                          minLength: 1
+                          type: string
+                      required:
+                      - clientId
+                      - role
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  realmRoles:
+                    description: RealmRoles are the realm roles granted to the service
+                      account.
+                    items:
+                      maxLength: 255
+                      minLength: 1
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
               type:
                 description: |-
                   Type is the OIDC client type, public or confidential. It is immutable: a
@@ -325,6 +421,15 @@ spec:
             - message: secretRef is required for a confidential client and forbidden
                 for a public client
               rule: 'self.type == ''confidential'' ? has(self.secretRef) : !has(self.secretRef)'
+            - message: a public client must require PKCE; pkceMethod None is only
+                allowed for a confidential client
+              rule: '!(self.type == ''public'' && has(self.pkceMethod) && self.pkceMethod
+                == ''None'')'
+            - message: serviceAccount is only allowed for a confidential client
+              rule: '!has(self.serviceAccount) || self.type == ''confidential'''
+            - message: a client scope cannot be both a default and an optional scope
+              rule: '!has(self.defaultClientScopes) || !has(self.optionalClientScopes)
+                || self.defaultClientScopes.all(s, !(s in self.optionalClientScopes))'
           status:
             description: |-
               ClientStatus defines the observed state of a Client, following

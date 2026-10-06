@@ -77,6 +77,21 @@ const (
 	opGetClientSecret        = "get_client_secret"
 	opCreateClientRole       = "create_client_role"
 	opEnsureClientRoleMapper = "ensure_client_role_mapper"
+
+	// Client service-account operations.
+	opGetServiceAccountUser = "get_service_account_user"
+	opGetRealm              = "get_realm"
+	opGetUserRoleMappings   = "get_user_role_mappings"
+	opGetRealmRole          = "get_realm_role"
+	opAddUserRealmRoles     = "add_user_realm_roles"
+	opRemoveUserRealmRoles  = "remove_user_realm_roles"
+	opAddUserClientRoles    = "add_user_client_roles"
+	opRemoveUserClientRoles = "remove_user_client_roles"
+
+	// Client scope operations.
+	opListClientScopes  = "list_client_scopes"
+	opAddClientScope    = "add_client_scope"
+	opRemoveClientScope = "remove_client_scope"
 )
 
 var (

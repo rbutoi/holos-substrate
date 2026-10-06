@@ -17,6 +17,9 @@ type Realm struct {
 	Realm string `json:"realm,omitempty"`
 	// Enabled reports whether the realm is enabled.
 	Enabled bool `json:"enabled,omitempty"`
+	// DefaultRole is the composite role Keycloak grants every user in the realm,
+	// service accounts included.
+	DefaultRole *RealmRole `json:"defaultRole,omitempty"`
 }
 
 // GetRealm fetches the realm's top-level representation via
