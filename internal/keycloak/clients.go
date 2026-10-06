@@ -168,6 +168,11 @@ type OIDCClient struct {
 	// ServiceAccountsEnabled reports whether the client has a service account,
 	// which lets it authenticate as itself with the client credentials grant.
 	ServiceAccountsEnabled *bool `json:"serviceAccountsEnabled,omitempty"`
+	// DefaultClientScopes and OptionalClientScopes are the names of the client
+	// scopes attached to the client. Read only: they are attached and detached
+	// through the client-scope endpoints, so they are not sent on create.
+	DefaultClientScopes  []string `json:"defaultClientScopes,omitempty"`
+	OptionalClientScopes []string `json:"optionalClientScopes,omitempty"`
 	// Attributes carries the client's attribute map (e.g. the PKCE
 	// pkce.code.challenge.method). Set on create to program managed attributes;
 	// omitempty so an unset map is not sent.

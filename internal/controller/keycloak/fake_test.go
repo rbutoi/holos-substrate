@@ -130,6 +130,8 @@ type fakeClient struct {
 
 	// sa models client service accounts and their role mappings.
 	sa fakeServiceAccounts
+	// scopes models the realm's client scopes and each client's attachments.
+	scopes fakeClientScopes
 }
 
 // newFakeClient returns a reachable fake with the given pre-existing group
@@ -153,6 +155,7 @@ func newFakeClient(existingGroups ...string) *fakeClient {
 		lastUpdateFields:     map[string]keycloak.ClientFields{},
 		clientDescriptions:   map[string]string{},
 		sa:                   newFakeServiceAccounts(),
+		scopes:               newFakeClientScopes(),
 	}
 	for _, p := range existingGroups {
 		f.addGroup(p)
@@ -262,13 +265,15 @@ func (f *fakeClient) FindClientByClientID(ctx context.Context, clientID string) 
 	if !ok {
 		return nil, nil
 	}
+	cp := keycloak.OIDCClient{ID: id, ClientID: clientID}
 	if existing, ok := f.clientObjects[clientID]; ok {
-		cp := existing
+		cp = existing
 		cp.ID = id
 		cp.ClientID = clientID
-		return &cp, nil
 	}
-	return &keycloak.OIDCClient{ID: id, ClientID: clientID}, nil
+	cp.DefaultClientScopes = f.scopes.attachedLocked(id, keycloak.DefaultClientScopes)
+	cp.OptionalClientScopes = f.scopes.attachedLocked(id, keycloak.OptionalClientScopes)
+	return &cp, nil
 }
 
 func (f *fakeClient) GetClientRole(ctx context.Context, clientUUID, roleName string) (*keycloak.ClientRole, error) {

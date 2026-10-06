@@ -200,6 +200,16 @@ func (in *ClientSpec) DeepCopyInto(out *ClientSpec) {
 		*out = new(ClientServiceAccount)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.DefaultClientScopes != nil {
+		in, out := &in.DefaultClientScopes, &out.DefaultClientScopes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.OptionalClientScopes != nil {
+		in, out := &in.OptionalClientScopes, &out.OptionalClientScopes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.ClientRoles != nil {
 		in, out := &in.ClientRoles, &out.ClientRoles
 		*out = make([]ClientRoleReference, len(*in))

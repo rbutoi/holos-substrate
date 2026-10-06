@@ -130,6 +130,7 @@ type ClientFlows struct {
 // +kubebuilder:validation:XValidation:rule="self.type == 'confidential' ? has(self.secretRef) : !has(self.secretRef)",message="secretRef is required for a confidential client and forbidden for a public client"
 // +kubebuilder:validation:XValidation:rule="!(self.type == 'public' && has(self.pkceMethod) && self.pkceMethod == 'None')",message="a public client must require PKCE; pkceMethod None is only allowed for a confidential client"
 // +kubebuilder:validation:XValidation:rule="!has(self.serviceAccount) || self.type == 'confidential'",message="serviceAccount is only allowed for a confidential client"
+// +kubebuilder:validation:XValidation:rule="!has(self.defaultClientScopes) || !has(self.optionalClientScopes) || self.defaultClientScopes.all(s, !(s in self.optionalClientScopes))",message="a client scope cannot be both a default and an optional scope"
 type ClientSpec struct {
 	// ClientID is the Keycloak client ID, named by its URL (e.g.
 	// https://quay.holos.internal). It is immutable: it is the client's durable
@@ -241,6 +242,31 @@ type ClientSpec struct {
 	//
 	// +optional
 	ServiceAccount *ClientServiceAccount `json:"serviceAccount,omitempty"`
+
+	// DefaultClientScopes are the client scopes added to every token the client
+	// requests, by name. The list is complete: a default scope the client has but
+	// the list does not name is removed. When omitted, the client's default
+	// scopes are left as they are in Keycloak.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	DefaultClientScopes []string `json:"defaultClientScopes,omitempty"`
+
+	// OptionalClientScopes are the client scopes added to a token only when the
+	// client requests them, by name. The list is complete: an optional scope the
+	// client has but the list does not name is removed. When omitted, the
+	// client's optional scopes are left as they are in Keycloak. A scope cannot
+	// be both default and optional.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=255
+	OptionalClientScopes []string `json:"optionalClientScopes,omitempty"`
 
 	// ClientRoles optionally lists the client roles defined on this client — the
 	// primitive owner/editor/viewer triad scoped to this one client. A role group

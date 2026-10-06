@@ -234,6 +234,10 @@ func TestClientAdmissionRejects(t *testing.T) {
 		"a public client with a service account": func(s *keycloakv1alpha1.ClientSpec) {
 			s.ServiceAccount = &keycloakv1alpha1.ClientServiceAccount{}
 		},
+		"a scope listed as both default and optional": func(s *keycloakv1alpha1.ClientSpec) {
+			s.DefaultClientScopes = []string{"email"}
+			s.OptionalClientScopes = []string{"email"}
+		},
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {

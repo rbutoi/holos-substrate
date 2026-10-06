@@ -182,6 +182,19 @@ spec:
                 - message: clientRoles on a Client may not set clientId; a client
                     defines roles on itself (use clientRef naming this client)
                   rule: self.all(r, !has(r.clientId))
+              defaultClientScopes:
+                description: |-
+                  DefaultClientScopes are the client scopes added to every token the client
+                  requests, by name. The list is complete: a default scope the client has but
+                  the list does not name is removed. When omitted, the client's default
+                  scopes are left as they are in Keycloak.
+                items:
+                  maxLength: 255
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               deletionPolicy:
                 description: |-
                   DeletionPolicy controls how the controller handles the Keycloak client when
@@ -258,6 +271,20 @@ spec:
                 x-kubernetes-validations:
                 - message: instanceRef is immutable
                   rule: self == oldSelf
+              optionalClientScopes:
+                description: |-
+                  OptionalClientScopes are the client scopes added to a token only when the
+                  client requests them, by name. The list is complete: an optional scope the
+                  client has but the list does not name is removed. When omitted, the
+                  client's optional scopes are left as they are in Keycloak. A scope cannot
+                  be both default and optional.
+                items:
+                  maxLength: 255
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               pkceMethod:
                 description: |-
                   PKCEMethod is the PKCE code-challenge method the client requires on the
@@ -400,6 +427,9 @@ spec:
                 == ''None'')'
             - message: serviceAccount is only allowed for a confidential client
               rule: '!has(self.serviceAccount) || self.type == ''confidential'''
+            - message: a client scope cannot be both a default and an optional scope
+              rule: '!has(self.defaultClientScopes) || !has(self.optionalClientScopes)
+                || self.defaultClientScopes.all(s, !(s in self.optionalClientScopes))'
           status:
             description: |-
               ClientStatus defines the observed state of a Client, following

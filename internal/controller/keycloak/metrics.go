@@ -87,6 +87,11 @@ const (
 	opRemoveUserRealmRoles  = "remove_user_realm_roles"
 	opAddUserClientRoles    = "add_user_client_roles"
 	opRemoveUserClientRoles = "remove_user_client_roles"
+
+	// Client scope operations.
+	opListClientScopes  = "list_client_scopes"
+	opAddClientScope    = "add_client_scope"
+	opRemoveClientScope = "remove_client_scope"
 )
 
 var (

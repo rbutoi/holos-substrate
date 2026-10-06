@@ -94,6 +94,15 @@ type ClientClient interface {
 	// AddUserClientRoles and RemoveUserClientRoles map and unmap a client's roles.
 	AddUserClientRoles(ctx context.Context, userID, clientUUID string, roles []keycloak.ClientRole) error
 	RemoveUserClientRoles(ctx context.Context, userID, clientUUID string, roles []keycloak.ClientRole) error
+
+	// ListClientScopes returns the realm's client scopes, to resolve names.
+	ListClientScopes(ctx context.Context) ([]keycloak.ClientScope, error)
+	// ListClientScopesOfKind returns the client's default or optional scopes.
+	ListClientScopesOfKind(ctx context.Context, clientUUID string, kind keycloak.ClientScopeKind) ([]keycloak.ClientScope, error)
+	// AddClientScope and RemoveClientScope attach and detach a default or
+	// optional scope.
+	AddClientScope(ctx context.Context, clientUUID string, kind keycloak.ClientScopeKind, scopeID string) error
+	RemoveClientScope(ctx context.Context, clientUUID string, kind keycloak.ClientScopeKind, scopeID string) error
 }
 
 // ClientClientFactory builds a ClientClient from a resolved Keycloak credential,
@@ -282,6 +291,11 @@ func (r *ClientReconciler) convergeThenSucceed(ctx context.Context, logger logr.
 	}
 	rolesChanged, err := r.ensureServiceAccountRoles(ctx, kc, kclient, clientUUID)
 	mutated = mutated || rolesChanged
+	if err != nil {
+		return r.failAfterMutation(ctx, kclient, err, mutated)
+	}
+	scopesChanged, err := r.ensureClientScopes(ctx, kc, kclient, clientUUID, existing)
+	mutated = mutated || scopesChanged
 	if err != nil {
 		return r.failAfterMutation(ctx, kclient, err, mutated)
 	}
