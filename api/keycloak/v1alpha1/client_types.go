@@ -102,6 +102,32 @@ type ClientSpec struct {
 	// +optional
 	Description string `json:"description,omitempty"`
 
+	// DisplayName is the client's name as shown in the Keycloak admin console and
+	// on the login and consent screens. When omitted, a client this resource
+	// creates is named after its metadata.name, and the name is not managed
+	// afterwards, so a name set in the console is left alone.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	DisplayName *string `json:"displayName,omitempty"`
+
+	// RootURL is the client's root URL, which Keycloak prepends to relative
+	// redirect URIs and to the base URL. When omitted, the client's root URL is
+	// left as it is in Keycloak.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=2048
+	RootURL *string `json:"rootUrl,omitempty"`
+
+	// BaseURL is the URL Keycloak links to when it sends a user back to the
+	// client, for example from the account console. When omitted, the client's
+	// base URL is left as it is in Keycloak.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=2048
+	BaseURL *string `json:"baseUrl,omitempty"`
+
 	// ClientRoles optionally lists the client roles defined on this client — the
 	// primitive owner/editor/viewer triad scoped to this one client. A role group
 	// (Group) assigns one of these, and the per-client

@@ -34,6 +34,10 @@ type ClientFields struct {
 	RedirectURIs *[]string
 	// WebOrigins, when non-nil, replaces the CORS web-origin list.
 	WebOrigins *[]string
+	// RootURL, when non-nil, sets the client's root URL.
+	RootURL *string
+	// BaseURL, when non-nil, sets the client's base URL.
+	BaseURL *string
 	// Attributes, when non-nil, MERGES the given attribute keys onto the client's
 	// existing attributes map (rather than replacing it), so a managed attribute
 	// such as the PKCE code-challenge method is set without clobbering unmanaged
@@ -69,6 +73,12 @@ func (f ClientFields) apply(raw RawClient) {
 	}
 	if f.WebOrigins != nil {
 		raw["webOrigins"] = *f.WebOrigins
+	}
+	if f.RootURL != nil {
+		raw["rootUrl"] = *f.RootURL
+	}
+	if f.BaseURL != nil {
+		raw["baseUrl"] = *f.BaseURL
 	}
 	if f.Attributes != nil || len(f.RemoveAttributes) > 0 {
 		attrs, _ := raw["attributes"].(map[string]any)
@@ -122,6 +132,12 @@ type OIDCClient struct {
 	RedirectURIs []string `json:"redirectUris,omitempty"`
 	// WebOrigins are the client's allowed CORS web origins.
 	WebOrigins []string `json:"webOrigins,omitempty"`
+	// RootURL is the URL Keycloak prepends to the client's relative URLs.
+	// omitempty so an unset root URL is not sent on create.
+	RootURL string `json:"rootUrl,omitempty"`
+	// BaseURL is the URL Keycloak links to when sending a user back to the
+	// client. omitempty so an unset base URL is not sent on create.
+	BaseURL string `json:"baseUrl,omitempty"`
 	// Attributes carries the client's attribute map (e.g. the PKCE
 	// pkce.code.challenge.method). Set on create to program managed attributes;
 	// omitempty so an unset map is not sent.

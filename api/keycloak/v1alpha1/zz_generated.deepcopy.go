@@ -115,6 +115,21 @@ func (in *ClientSpec) DeepCopyInto(out *ClientSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.DisplayName != nil {
+		in, out := &in.DisplayName, &out.DisplayName
+		*out = new(string)
+		**out = **in
+	}
+	if in.RootURL != nil {
+		in, out := &in.RootURL, &out.RootURL
+		*out = new(string)
+		**out = **in
+	}
+	if in.BaseURL != nil {
+		in, out := &in.BaseURL, &out.BaseURL
+		*out = new(string)
+		**out = **in
+	}
 	if in.ClientRoles != nil {
 		in, out := &in.ClientRoles, &out.ClientRoles
 		*out = make([]ClientRoleReference, len(*in))

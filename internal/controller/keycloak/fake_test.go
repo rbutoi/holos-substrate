@@ -393,6 +393,37 @@ func (f *fakeClient) seedClientDescription(clientUUID, description string) {
 	}
 }
 
+// editClient changes a pre-existing client's live fields by UUID, modeling an
+// edit made in the admin console.
+func (f *fakeClient) editClient(clientUUID string, edit func(*keycloak.OIDCClient)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if clientID, ok := f.clientIDForUUIDLocked(clientUUID); ok {
+		current := f.clientObjects[clientID]
+		edit(&current)
+		f.clientObjects[clientID] = current
+	}
+}
+
+// clientObject returns a client's current live fields by UUID.
+func (f *fakeClient) clientObject(clientUUID string) keycloak.OIDCClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	clientID, _ := f.clientIDForUUIDLocked(clientUUID)
+	return f.clientObjects[clientID]
+}
+
+// clientIDForUUIDLocked returns the clientId of the client with the UUID. The
+// caller holds f.mu.
+func (f *fakeClient) clientIDForUUIDLocked(clientUUID string) (string, bool) {
+	for clientID, id := range f.clients {
+		if id == clientUUID {
+			return clientID, true
+		}
+	}
+	return "", false
+}
+
 // seedClientRole registers a client role (clientUUID/role → UUID) so GetClientRole
 // resolves it.
 func (f *fakeClient) seedClientRole(clientUUID, role, uuid string) {
@@ -615,6 +646,12 @@ func (f *fakeClient) UpdateClientFields(ctx context.Context, clientUUID string, 
 		}
 		if fields.WebOrigins != nil {
 			current.WebOrigins = append([]string(nil), (*fields.WebOrigins)...)
+		}
+		if fields.RootURL != nil {
+			current.RootURL = *fields.RootURL
+		}
+		if fields.BaseURL != nil {
+			current.BaseURL = *fields.BaseURL
 		}
 		if current.Attributes == nil {
 			current.Attributes = map[string]string{}

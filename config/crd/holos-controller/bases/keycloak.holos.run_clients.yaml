@@ -84,6 +84,13 @@ spec:
                   claim and converge such a client. When this resource is deleted, an adopted
                   client is released unless deletionPolicy is Delete.
                 type: boolean
+              baseUrl:
+                description: |-
+                  BaseURL is the URL Keycloak links to when it sends a user back to the
+                  client, for example from the account console. When omitted, the client's
+                  base URL is left as it is in Keycloak.
+                maxLength: 2048
+                type: string
               caBundle:
                 description: |-
                   CABundle carries PEM-encoded x509 CA certificates the controller trusts in
@@ -193,6 +200,15 @@ spec:
                   empty (the reconciler sends the spec value unconditionally on update, so a
                   console-set description is corrected back to the spec on every reconcile).
                 type: string
+              displayName:
+                description: |-
+                  DisplayName is the client's name as shown in the Keycloak admin console and
+                  on the login and consent screens. When omitted, a client this resource
+                  creates is named after its metadata.name, and the name is not managed
+                  afterwards, so a name set in the console is left alone.
+                maxLength: 255
+                minLength: 1
+                type: string
               instanceRef:
                 description: |-
                   InstanceRef references the Instance this client is provisioned in. A
@@ -226,6 +242,13 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              rootUrl:
+                description: |-
+                  RootURL is the client's root URL, which Keycloak prepends to relative
+                  redirect URIs and to the base URL. When omitted, the client's root URL is
+                  left as it is in Keycloak.
+                maxLength: 2048
+                type: string
               secretRef:
                 description: |-
                   SecretRef names where a confidential client's generated secret is delivered
