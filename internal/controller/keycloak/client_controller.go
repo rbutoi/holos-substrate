@@ -326,13 +326,13 @@ func specFlows(kclient *keycloakv1alpha1.Client) (standard, directAccessGrants, 
 }
 
 // managedAttributes returns the client attributes the spec manages: the values
-// to set, and the keys to remove. A public client requires PKCE S256 and a
-// confidential one has the PKCE attribute removed. The post-logout redirect URIs
-// are managed only when the spec sets them.
+// to set, and the keys to remove. The PKCE attribute is always managed: set to
+// S256 when the client requires PKCE and removed when it does not. The
+// post-logout redirect URIs are managed only when the spec sets them.
 func managedAttributes(kclient *keycloakv1alpha1.Client) (map[string]string, []string) {
 	set := map[string]string{}
 	var remove []string
-	if kclient.Spec.Type == keycloakv1alpha1.ClientTypePublic {
+	if pkceMethod(kclient) == keycloakv1alpha1.PKCEMethodS256 {
 		set[keycloak.PKCECodeChallengeMethodAttr] = keycloak.PKCEMethodS256
 	} else {
 		remove = append(remove, keycloak.PKCECodeChallengeMethodAttr)
@@ -341,6 +341,18 @@ func managedAttributes(kclient *keycloakv1alpha1.Client) (map[string]string, []s
 		set[keycloak.PostLogoutRedirectURIsAttr] = keycloak.JoinPostLogoutRedirectURIs(kclient.Spec.PostLogoutRedirectURIs)
 	}
 	return set, remove
+}
+
+// pkceMethod returns the PKCE method the client requires: the spec's, or by
+// default S256 for a public client and none for a confidential one.
+func pkceMethod(kclient *keycloakv1alpha1.Client) keycloakv1alpha1.PKCEMethod {
+	if kclient.Spec.PKCEMethod != "" {
+		return kclient.Spec.PKCEMethod
+	}
+	if kclient.Spec.Type == keycloakv1alpha1.ClientTypePublic {
+		return keycloakv1alpha1.PKCEMethodS256
+	}
+	return keycloakv1alpha1.PKCEMethodNone
 }
 
 // attributesMatch reports whether the live attributes already hold every managed
@@ -397,8 +409,8 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 		RootURL: kclient.Spec.RootURL,
 		BaseURL: kclient.Spec.BaseURL,
 	}
-	// A confidential client has any stale PKCE attribute actively removed, so an
-	// adopted client that previously required PKCE converges to no PKCE.
+	// A client that does not require PKCE has any stale PKCE attribute actively
+	// removed, so an adopted client that previously required it converges.
 	set, remove := managedAttributes(kclient)
 	if len(set) > 0 {
 		fields.Attributes = set

@@ -185,6 +185,71 @@ func TestClientReconcileFlows(t *testing.T) {
 	}
 }
 
+func TestClientReconcileConfidentialRequiresPKCE(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-confidential-pkce"
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.Type = keycloakv1alpha1.ClientTypeConfidential
+		s.SecretRef = &keycloakv1alpha1.ClientSecretReference{Name: "app-oidc", Key: "client_secret"}
+		s.PKCEMethod = keycloakv1alpha1.PKCEMethodS256
+	})
+
+	fake := newFakeClient()
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	uuid := fake.clients[settingsClientID(ns)]
+	if got := fake.clientObject(uuid).Attributes[keycloak.PKCECodeChallengeMethodAttr]; got != keycloak.PKCEMethodS256 {
+		t.Errorf("created PKCE method = %q, want %q", got, keycloak.PKCEMethodS256)
+	}
+
+	// PKCE removed in the console is put back.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		delete(c.Attributes, keycloak.PKCECodeChallengeMethodAttr)
+	})
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := fake.clientObject(uuid).Attributes[keycloak.PKCECodeChallengeMethodAttr]; got != keycloak.PKCEMethodS256 {
+		t.Errorf("PKCE method after drift = %q, want %q", got, keycloak.PKCEMethodS256)
+	}
+}
+
+// TestClientAdmissionRejects checks the CEL rules that reject a Client spec at
+// admission.
+func TestClientAdmissionRejects(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-admission"
+	makeNamespace(t, ctx, ns)
+	cases := map[string]func(*keycloakv1alpha1.ClientSpec){
+		"a public client with pkceMethod None": func(s *keycloakv1alpha1.ClientSpec) {
+			s.PKCEMethod = keycloakv1alpha1.PKCEMethodNone
+		},
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			kclient := &keycloakv1alpha1.Client{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, GenerateName: "app-"},
+				Spec: keycloakv1alpha1.ClientSpec{
+					ClientID:    settingsClientID(ns),
+					Type:        keycloakv1alpha1.ClientTypePublic,
+					InstanceRef: keycloakv1alpha1.InstanceReference{Name: "kc"},
+				},
+			}
+			edit(&kclient.Spec)
+			if err := shared.k8sClient.Create(ctx, kclient); err == nil {
+				t.Errorf("%s was admitted", name)
+			}
+		})
+	}
+}
+
 func TestClientReconcilePostLogoutRedirectURIs(t *testing.T) {
 	if shared == nil {
 		t.Skip("envtest not provisioned")

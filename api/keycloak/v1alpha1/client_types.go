@@ -20,6 +20,19 @@ const (
 	ClientTypeConfidential ClientType = "confidential"
 )
 
+// PKCEMethod is the PKCE code-challenge method a client requires on the
+// authorization code flow.
+//
+// +kubebuilder:validation:Enum=S256;None
+type PKCEMethod string
+
+const (
+	// PKCEMethodS256 requires PKCE with the SHA-256 code-challenge method.
+	PKCEMethodS256 PKCEMethod = "S256"
+	// PKCEMethodNone does not require PKCE.
+	PKCEMethodNone PKCEMethod = "None"
+)
+
 // ClientSecretReference names where a confidential client's generated client
 // secret is delivered. The reconciler writes a generate-once, create-if-absent
 // Secret in the resource's own namespace per the secret-handling guardrail — it
@@ -75,6 +88,7 @@ type ClientFlows struct {
 // claim (repo precedent in holos/components/keycloak/realm-config/buildplan.cue).
 //
 // +kubebuilder:validation:XValidation:rule="self.type == 'confidential' ? has(self.secretRef) : !has(self.secretRef)",message="secretRef is required for a confidential client and forbidden for a public client"
+// +kubebuilder:validation:XValidation:rule="!(self.type == 'public' && has(self.pkceMethod) && self.pkceMethod == 'None')",message="a public client must require PKCE; pkceMethod None is only allowed for a confidential client"
 type ClientSpec struct {
 	// ClientID is the Keycloak client ID, named by its URL (e.g.
 	// https://quay.holos.internal). It is immutable: it is the client's durable
@@ -169,6 +183,15 @@ type ClientSpec struct {
 	//
 	// +optional
 	Flows *ClientFlows `json:"flows,omitempty"`
+
+	// PKCEMethod is the PKCE code-challenge method the client requires on the
+	// authorization code flow: S256 requires PKCE, and None does not. When
+	// omitted, a public client requires S256 and a confidential client does not
+	// require PKCE. A public client cannot be set to None, because without a
+	// client secret PKCE is what protects its authorization codes.
+	//
+	// +optional
+	PKCEMethod PKCEMethod `json:"pkceMethod,omitempty"`
 
 	// ClientRoles optionally lists the client roles defined on this client — the
 	// primitive owner/editor/viewer triad scoped to this one client. A role group

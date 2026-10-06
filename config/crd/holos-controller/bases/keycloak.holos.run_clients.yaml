@@ -258,6 +258,17 @@ spec:
                 x-kubernetes-validations:
                 - message: instanceRef is immutable
                   rule: self == oldSelf
+              pkceMethod:
+                description: |-
+                  PKCEMethod is the PKCE code-challenge method the client requires on the
+                  authorization code flow: S256 requires PKCE, and None does not. When
+                  omitted, a public client requires S256 and a confidential client does not
+                  require PKCE. A public client cannot be set to None, because without a
+                  client secret PKCE is what protects its authorization codes.
+                enum:
+                - S256
+                - None
+                type: string
               postLogoutRedirectUris:
                 description: |-
                   PostLogoutRedirectURIs are the URIs Keycloak may send a user back to after
@@ -338,6 +349,10 @@ spec:
             - message: secretRef is required for a confidential client and forbidden
                 for a public client
               rule: 'self.type == ''confidential'' ? has(self.secretRef) : !has(self.secretRef)'
+            - message: a public client must require PKCE; pkceMethod None is only
+                allowed for a confidential client
+              rule: '!(self.type == ''public'' && has(self.pkceMethod) && self.pkceMethod
+                == ''None'')'
           status:
             description: |-
               ClientStatus defines the observed state of a Client, following
