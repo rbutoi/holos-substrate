@@ -319,6 +319,51 @@ spec:
                 - key
                 - name
                 type: object
+              serviceAccount:
+                description: |-
+                  ServiceAccount, when set, enables the client's service account and grants
+                  it exactly the listed roles. Only a confidential client can have one. When
+                  omitted, the client's service account and its roles are left as they are in
+                  Keycloak.
+                properties:
+                  clientRoles:
+                    description: |-
+                      ClientRoles are the client roles granted to the service account, each
+                      named by the clientId of the client that defines it.
+                    items:
+                      description: ServiceAccountClientRole names one client role
+                        to grant a service account.
+                      properties:
+                        clientId:
+                          description: |-
+                            ClientID is the Keycloak clientId of the client that defines the role,
+                            for example realm-management.
+                          maxLength: 255
+                          minLength: 1
+                          type: string
+                        role:
+                          description: Role is the name of the client role.
+                          maxLength: 255
+                          minLength: 1
+                          type: string
+                      required:
+                      - clientId
+                      - role
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  realmRoles:
+                    description: RealmRoles are the realm roles granted to the service
+                      account.
+                    items:
+                      maxLength: 255
+                      minLength: 1
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
               type:
                 description: |-
                   Type is the OIDC client type, public or confidential. It is immutable: a
@@ -353,6 +398,8 @@ spec:
                 allowed for a confidential client
               rule: '!(self.type == ''public'' && has(self.pkceMethod) && self.pkceMethod
                 == ''None'')'
+            - message: serviceAccount is only allowed for a confidential client
+              rule: '!has(self.serviceAccount) || self.type == ''confidential'''
           status:
             description: |-
               ClientStatus defines the observed state of a Client, following

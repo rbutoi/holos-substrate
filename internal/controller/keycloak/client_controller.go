@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -76,6 +77,23 @@ type ClientClient interface {
 	// GetClientSecret returns the confidential client's generated secret value, for
 	// delivery to the consumer's Secret.
 	GetClientSecret(ctx context.Context, clientUUID string) (*keycloak.ClientSecret, error)
+
+	// GetRealm returns the realm, whose default role every service account keeps.
+	GetRealm(ctx context.Context) (*keycloak.Realm, error)
+	// GetServiceAccountUser returns the user behind the client's service account.
+	GetServiceAccountUser(ctx context.Context, clientUUID string) (*keycloak.User, error)
+	// GetUserRoleMappings returns the realm and client roles mapped to the user.
+	GetUserRoleMappings(ctx context.Context, userID string) (*keycloak.UserRoleMappings, error)
+	// GetRealmRole resolves a realm role by name.
+	GetRealmRole(ctx context.Context, roleName string) (*keycloak.RealmRole, error)
+	// GetClientRole resolves a client role by name on the client.
+	GetClientRole(ctx context.Context, clientUUID, roleName string) (*keycloak.ClientRole, error)
+	// AddUserRealmRoles and RemoveUserRealmRoles map and unmap realm roles.
+	AddUserRealmRoles(ctx context.Context, userID string, roles []keycloak.RealmRole) error
+	RemoveUserRealmRoles(ctx context.Context, userID string, roles []keycloak.RealmRole) error
+	// AddUserClientRoles and RemoveUserClientRoles map and unmap a client's roles.
+	AddUserClientRoles(ctx context.Context, userID, clientUUID string, roles []keycloak.ClientRole) error
+	RemoveUserClientRoles(ctx context.Context, userID, clientUUID string, roles []keycloak.ClientRole) error
 }
 
 // ClientClientFactory builds a ClientClient from a resolved Keycloak credential,
@@ -116,6 +134,10 @@ type ClientReconciler struct {
 	// NewClient builds the Keycloak client from a resolved credential. Defaults to
 	// NewClientClient; tests override it with a fake factory.
 	NewClient ClientClientFactory
+
+	// defaultRoles caches each instance's realm default-role name, keyed by
+	// "<namespace>/<name>" of the Instance, since it does not change.
+	defaultRoles sync.Map
 }
 
 // Reconcile drives a Client toward its desired state: fetch CR → ensure
@@ -250,20 +272,29 @@ func (r *ClientReconciler) reconcileExisting(ctx context.Context, logger logr.Lo
 func (r *ClientReconciler) convergeThenSucceed(ctx context.Context, logger logr.Logger, kc ClientClient, kclient *keycloakv1alpha1.Client, clientUUID string, existing *keycloak.OIDCClient, created bool, reason, message string) (ctrl.Result, error) {
 	beforeUUID := kclient.Status.ClientUUID
 
+	// mutated records whether this reconcile has changed Keycloak, so a later
+	// step's failure still stamps the change.
+	mutated := created
 	updated, err := r.updateClient(ctx, kc, kclient, clientUUID, existing)
+	mutated = mutated || updated
 	if err != nil {
-		return r.fail(ctx, kclient, err)
+		return r.failAfterMutation(ctx, kclient, err, mutated)
+	}
+	rolesChanged, err := r.ensureServiceAccountRoles(ctx, kc, kclient, clientUUID)
+	mutated = mutated || rolesChanged
+	if err != nil {
+		return r.failAfterMutation(ctx, kclient, err, mutated)
 	}
 	if err := r.ensureClientRoles(ctx, kc, kclient, clientUUID); err != nil {
-		return r.fail(ctx, kclient, err)
+		return r.failAfterMutation(ctx, kclient, err, mutated)
 	}
 	if err := r.ensureRoleMapper(ctx, kc, kclient, clientUUID); err != nil {
-		return r.fail(ctx, kclient, err)
+		return r.failAfterMutation(ctx, kclient, err, mutated)
 	}
 	if err := r.deliverClientSecret(ctx, kc, kclient, clientUUID); err != nil {
-		return r.fail(ctx, kclient, err)
+		return r.failAfterMutation(ctx, kclient, err, mutated)
 	}
-	if created || updated {
+	if mutated {
 		r.stampMutation(kclient)
 	}
 	now := metav1.Now()
@@ -313,7 +344,17 @@ func (r *ClientReconciler) desiredClient(kclient *keycloakv1alpha1.Client) keycl
 		c.Attributes = set
 	}
 	c.StandardFlowEnabled, c.DirectAccessGrantsEnabled, c.ImplicitFlowEnabled = specFlows(kclient)
+	c.ServiceAccountsEnabled = specServiceAccountsEnabled(kclient)
 	return c
+}
+
+// specServiceAccountsEnabled is true when the spec declares a service account,
+// and nil when it leaves the service account unmanaged.
+func specServiceAccountsEnabled(kclient *keycloakv1alpha1.Client) *bool {
+	if kclient.Spec.ServiceAccount == nil {
+		return nil
+	}
+	return ptr.To(true)
 }
 
 // specFlows returns the spec's OAuth 2.0 flow settings, each nil when the spec
@@ -417,6 +458,7 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 	}
 	fields.RemoveAttributes = remove
 	fields.StandardFlowEnabled, fields.DirectAccessGrantsEnabled, fields.ImplicitFlowEnabled = specFlows(kclient)
+	fields.ServiceAccountsEnabled = specServiceAccountsEnabled(kclient)
 	if existing != nil && clientMatchesDesired(existing, kclient) {
 		return false, nil
 	}
@@ -447,7 +489,8 @@ func clientMatchesDesired(existing *keycloak.OIDCClient, kclient *keycloakv1alph
 	standard, directAccessGrants, implicit := specFlows(kclient)
 	if !optionalPtrMatches(standard, existing.StandardFlowEnabled) ||
 		!optionalPtrMatches(directAccessGrants, existing.DirectAccessGrantsEnabled) ||
-		!optionalPtrMatches(implicit, existing.ImplicitFlowEnabled) {
+		!optionalPtrMatches(implicit, existing.ImplicitFlowEnabled) ||
+		!optionalPtrMatches(specServiceAccountsEnabled(kclient), existing.ServiceAccountsEnabled) {
 		return false
 	}
 	set, remove := managedAttributes(kclient)
@@ -788,6 +831,23 @@ func (r *ClientReconciler) handleCredentialError(ctx context.Context, kclient *k
 		if statusErr := r.updateStatus(ctx, kclient); statusErr != nil {
 			return ctrl.Result{}, statusErr
 		}
+	}
+	return ctrl.Result{}, err
+}
+
+// failAfterMutation is fail for a step that runs after this reconcile may
+// already have changed Keycloak. When mutated, it stamps the mutation and writes
+// status even if the Ready condition is unchanged, so the change is recorded.
+func (r *ClientReconciler) failAfterMutation(ctx context.Context, kclient *keycloakv1alpha1.Client, err error, mutated bool) (ctrl.Result, error) {
+	if !mutated {
+		return r.fail(ctx, kclient, err)
+	}
+	r.stampMutation(kclient)
+	if changed := markNotReady(&kclient.Status.Conditions, ReasonKeycloakError, err.Error(), kclient.Generation); changed {
+		r.Recorder.Event(kclient, corev1.EventTypeWarning, ReasonKeycloakError, err.Error())
+	}
+	if statusErr := r.updateStatus(ctx, kclient); statusErr != nil {
+		log.FromContext(ctx).Error(statusErr, "updating status after Keycloak error")
 	}
 	return ctrl.Result{}, err
 }

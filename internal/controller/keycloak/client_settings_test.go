@@ -231,6 +231,9 @@ func TestClientAdmissionRejects(t *testing.T) {
 		"a public client with pkceMethod None": func(s *keycloakv1alpha1.ClientSpec) {
 			s.PKCEMethod = keycloakv1alpha1.PKCEMethodNone
 		},
+		"a public client with a service account": func(s *keycloakv1alpha1.ClientSpec) {
+			s.ServiceAccount = &keycloakv1alpha1.ClientServiceAccount{}
+		},
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -44,6 +44,9 @@ type ClientFields struct {
 	StandardFlowEnabled       *bool
 	DirectAccessGrantsEnabled *bool
 	ImplicitFlowEnabled       *bool
+	// ServiceAccountsEnabled, when non-nil, enables or disables the client's
+	// service account.
+	ServiceAccountsEnabled *bool
 	// Attributes, when non-nil, MERGES the given attribute keys onto the client's
 	// existing attributes map (rather than replacing it), so a managed attribute
 	// such as the PKCE code-challenge method is set without clobbering unmanaged
@@ -94,6 +97,9 @@ func (f ClientFields) apply(raw RawClient) {
 	}
 	if f.ImplicitFlowEnabled != nil {
 		raw["implicitFlowEnabled"] = *f.ImplicitFlowEnabled
+	}
+	if f.ServiceAccountsEnabled != nil {
+		raw["serviceAccountsEnabled"] = *f.ServiceAccountsEnabled
 	}
 	if f.Attributes != nil || len(f.RemoveAttributes) > 0 {
 		attrs, _ := raw["attributes"].(map[string]any)
@@ -159,6 +165,9 @@ type OIDCClient struct {
 	StandardFlowEnabled       *bool `json:"standardFlowEnabled,omitempty"`
 	DirectAccessGrantsEnabled *bool `json:"directAccessGrantsEnabled,omitempty"`
 	ImplicitFlowEnabled       *bool `json:"implicitFlowEnabled,omitempty"`
+	// ServiceAccountsEnabled reports whether the client has a service account,
+	// which lets it authenticate as itself with the client credentials grant.
+	ServiceAccountsEnabled *bool `json:"serviceAccountsEnabled,omitempty"`
 	// Attributes carries the client's attribute map (e.g. the PKCE
 	// pkce.code.challenge.method). Set on create to program managed attributes;
 	// omitempty so an unset map is not sent.
