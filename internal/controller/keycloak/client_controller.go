@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -293,23 +294,40 @@ func (r *ClientReconciler) recordConflict(ctx context.Context, logger logr.Logge
 // keycloak-clients.md); a confidential client carries no PKCE attribute.
 func (r *ClientReconciler) desiredClient(kclient *keycloakv1alpha1.Client) keycloak.OIDCClient {
 	public := kclient.Spec.Type == keycloakv1alpha1.ClientTypePublic
+	name := kclient.Name
+	if kclient.Spec.DisplayName != nil {
+		name = *kclient.Spec.DisplayName
+	}
 	c := keycloak.OIDCClient{
 		ClientID:     kclient.Spec.ClientID,
-		Name:         kclient.Name,
+		Name:         name,
 		Enabled:      true,
 		PublicClient: public,
 		RedirectURIs: kclient.Spec.RedirectURIs,
 		WebOrigins:   kclient.Spec.WebOrigins,
 		Description:  kclient.Spec.Description,
+		RootURL:      ptr.Deref(kclient.Spec.RootURL, ""),
+		BaseURL:      ptr.Deref(kclient.Spec.BaseURL, ""),
 	}
 	if public {
 		c.Attributes = map[string]string{keycloak.PKCECodeChallengeMethodAttr: keycloak.PKCEMethodS256}
 	}
+	c.StandardFlowEnabled, c.DirectAccessGrantsEnabled, c.ImplicitFlowEnabled = specFlows(kclient)
 	return c
 }
 
+// specFlows returns the spec's OAuth 2.0 flow settings, each nil when the spec
+// leaves that flow unmanaged.
+func specFlows(kclient *keycloakv1alpha1.Client) (standard, directAccessGrants, implicit *bool) {
+	if f := kclient.Spec.Flows; f != nil {
+		return f.StandardFlow, f.DirectAccessGrants, f.Implicit
+	}
+	return nil, nil, nil
+}
+
 // updateClient converges the managed fields (type, redirect URIs, web origins,
-// enabled, and the PKCE code-challenge attribute) of an existing client losslessly
+// enabled, the PKCE code-challenge attribute, and the display name, root URL and
+// base URL when the spec sets them) of an existing client losslessly
 // via UpdateClientFields, which preserves every unmanaged ClientRepresentation key
 // (protocol, service-account flags, default scopes, and any non-PKCE attributes).
 // A public client gets the S256 PKCE attribute MERGED in; a confidential client
@@ -328,6 +346,11 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 		RedirectURIs: &redirects,
 		WebOrigins:   &origins,
 		Description:  &desc, // always send: corrects drift, clears when empty
+		// Sent only when the spec sets them, so an omitted field is left as it
+		// is in Keycloak.
+		Name:    kclient.Spec.DisplayName,
+		RootURL: kclient.Spec.RootURL,
+		BaseURL: kclient.Spec.BaseURL,
 	}
 	if public {
 		fields.Attributes = map[string]string{keycloak.PKCECodeChallengeMethodAttr: keycloak.PKCEMethodS256}
@@ -336,6 +359,7 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 		// adopted client that previously required PKCE converges to no-PKCE.
 		fields.RemoveAttributes = []string{keycloak.PKCECodeChallengeMethodAttr}
 	}
+	fields.StandardFlowEnabled, fields.DirectAccessGrantsEnabled, fields.ImplicitFlowEnabled = specFlows(kclient)
 	if existing != nil && clientMatchesDesired(existing, kclient) {
 		return false, nil
 	}
@@ -358,11 +382,34 @@ func clientMatchesDesired(existing *keycloak.OIDCClient, kclient *keycloakv1alph
 	if !sameStringSet(existing.RedirectURIs, kclient.Spec.RedirectURIs) || !sameStringSet(existing.WebOrigins, kclient.Spec.WebOrigins) {
 		return false
 	}
+	if !optionalMatches(kclient.Spec.DisplayName, existing.Name) ||
+		!optionalMatches(kclient.Spec.RootURL, existing.RootURL) ||
+		!optionalMatches(kclient.Spec.BaseURL, existing.BaseURL) {
+		return false
+	}
+	standard, directAccessGrants, implicit := specFlows(kclient)
+	if !optionalPtrMatches(standard, existing.StandardFlowEnabled) ||
+		!optionalPtrMatches(directAccessGrants, existing.DirectAccessGrantsEnabled) ||
+		!optionalPtrMatches(implicit, existing.ImplicitFlowEnabled) {
+		return false
+	}
 	if public {
 		return existing.Attributes[keycloak.PKCECodeChallengeMethodAttr] == keycloak.PKCEMethodS256
 	}
 	_, hasPKCE := existing.Attributes[keycloak.PKCECodeChallengeMethodAttr]
 	return !hasPKCE
+}
+
+// optionalMatches reports whether an optional spec value is satisfied: an unset
+// value is unmanaged and always matches, a set one must equal the live value.
+func optionalMatches[T comparable](want *T, got T) bool {
+	return want == nil || *want == got
+}
+
+// optionalPtrMatches is optionalMatches for a live value that Keycloak may not
+// report: an unreported live value never satisfies a set spec value.
+func optionalPtrMatches[T comparable](want, got *T) bool {
+	return want == nil || ptr.Equal(want, got)
 }
 
 func sameStringSet(a, b []string) bool {
