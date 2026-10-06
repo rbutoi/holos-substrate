@@ -258,6 +258,19 @@ spec:
                 x-kubernetes-validations:
                 - message: instanceRef is immutable
                   rule: self == oldSelf
+              postLogoutRedirectUris:
+                description: |-
+                  PostLogoutRedirectURIs are the URIs Keycloak may send a user back to after
+                  they sign out, when the client names one in its logout request. When
+                  omitted, the client's post-logout redirect URIs are left as they are in
+                  Keycloak.
+                items:
+                  maxLength: 2048
+                  minLength: 1
+                  type: string
+                maxItems: 64
+                type: array
+                x-kubernetes-list-type: set
               redirectUris:
                 description: RedirectURIs are the allowed OAuth2 redirect URIs for
                   the client.

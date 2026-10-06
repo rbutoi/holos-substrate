@@ -309,8 +309,8 @@ func (r *ClientReconciler) desiredClient(kclient *keycloakv1alpha1.Client) keycl
 		RootURL:      ptr.Deref(kclient.Spec.RootURL, ""),
 		BaseURL:      ptr.Deref(kclient.Spec.BaseURL, ""),
 	}
-	if public {
-		c.Attributes = map[string]string{keycloak.PKCECodeChallengeMethodAttr: keycloak.PKCEMethodS256}
+	if set, _ := managedAttributes(kclient); len(set) > 0 {
+		c.Attributes = set
 	}
 	c.StandardFlowEnabled, c.DirectAccessGrantsEnabled, c.ImplicitFlowEnabled = specFlows(kclient)
 	return c
@@ -323,6 +323,51 @@ func specFlows(kclient *keycloakv1alpha1.Client) (standard, directAccessGrants, 
 		return f.StandardFlow, f.DirectAccessGrants, f.Implicit
 	}
 	return nil, nil, nil
+}
+
+// managedAttributes returns the client attributes the spec manages: the values
+// to set, and the keys to remove. A public client requires PKCE S256 and a
+// confidential one has the PKCE attribute removed. The post-logout redirect URIs
+// are managed only when the spec sets them.
+func managedAttributes(kclient *keycloakv1alpha1.Client) (map[string]string, []string) {
+	set := map[string]string{}
+	var remove []string
+	if kclient.Spec.Type == keycloakv1alpha1.ClientTypePublic {
+		set[keycloak.PKCECodeChallengeMethodAttr] = keycloak.PKCEMethodS256
+	} else {
+		remove = append(remove, keycloak.PKCECodeChallengeMethodAttr)
+	}
+	if kclient.Spec.PostLogoutRedirectURIs != nil {
+		set[keycloak.PostLogoutRedirectURIsAttr] = keycloak.JoinPostLogoutRedirectURIs(kclient.Spec.PostLogoutRedirectURIs)
+	}
+	return set, remove
+}
+
+// attributesMatch reports whether the live attributes already hold every managed
+// value and none of the removed keys. The post-logout redirect URIs compare as a
+// set, since their order carries no meaning.
+func attributesMatch(live, set map[string]string, remove []string) bool {
+	for key, want := range set {
+		got, ok := live[key]
+		if !ok {
+			return false
+		}
+		if key == keycloak.PostLogoutRedirectURIsAttr {
+			if !sameStringSet(keycloak.SplitPostLogoutRedirectURIs(got), keycloak.SplitPostLogoutRedirectURIs(want)) {
+				return false
+			}
+			continue
+		}
+		if got != want {
+			return false
+		}
+	}
+	for _, key := range remove {
+		if _, ok := live[key]; ok {
+			return false
+		}
+	}
+	return true
 }
 
 // updateClient converges the managed fields (type, redirect URIs, web origins,
@@ -352,13 +397,13 @@ func (r *ClientReconciler) updateClient(ctx context.Context, kc ClientClient, kc
 		RootURL: kclient.Spec.RootURL,
 		BaseURL: kclient.Spec.BaseURL,
 	}
-	if public {
-		fields.Attributes = map[string]string{keycloak.PKCECodeChallengeMethodAttr: keycloak.PKCEMethodS256}
-	} else {
-		// Confidential: actively clear any stale PKCE code-challenge attribute so an
-		// adopted client that previously required PKCE converges to no-PKCE.
-		fields.RemoveAttributes = []string{keycloak.PKCECodeChallengeMethodAttr}
+	// A confidential client has any stale PKCE attribute actively removed, so an
+	// adopted client that previously required PKCE converges to no PKCE.
+	set, remove := managedAttributes(kclient)
+	if len(set) > 0 {
+		fields.Attributes = set
 	}
+	fields.RemoveAttributes = remove
 	fields.StandardFlowEnabled, fields.DirectAccessGrantsEnabled, fields.ImplicitFlowEnabled = specFlows(kclient)
 	if existing != nil && clientMatchesDesired(existing, kclient) {
 		return false, nil
@@ -393,11 +438,8 @@ func clientMatchesDesired(existing *keycloak.OIDCClient, kclient *keycloakv1alph
 		!optionalPtrMatches(implicit, existing.ImplicitFlowEnabled) {
 		return false
 	}
-	if public {
-		return existing.Attributes[keycloak.PKCECodeChallengeMethodAttr] == keycloak.PKCEMethodS256
-	}
-	_, hasPKCE := existing.Attributes[keycloak.PKCECodeChallengeMethodAttr]
-	return !hasPKCE
+	set, remove := managedAttributes(kclient)
+	return attributesMatch(existing.Attributes, set, remove)
 }
 
 // optionalMatches reports whether an optional spec value is satisfied: an unset

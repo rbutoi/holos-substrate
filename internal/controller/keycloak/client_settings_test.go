@@ -184,3 +184,73 @@ func TestClientReconcileFlows(t *testing.T) {
 		t.Errorf("the unmanaged implicit flow was changed from the console's value")
 	}
 }
+
+func TestClientReconcilePostLogoutRedirectURIs(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-post-logout"
+	want := []string{"https://app.example.com/", "https://app.example.com/signed-out"}
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.PostLogoutRedirectURIs = want
+	})
+
+	fake := newFakeClient()
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	uuid := fake.clients[settingsClientID(ns)]
+	postLogout := func() []string {
+		return keycloak.SplitPostLogoutRedirectURIs(fake.clientObject(uuid).Attributes[keycloak.PostLogoutRedirectURIsAttr])
+	}
+	if got := postLogout(); !sameStringSet(got, want) {
+		t.Errorf("created post-logout redirect URIs = %v, want %v", got, want)
+	}
+
+	// The same URIs in another order are not drift.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		c.Attributes[keycloak.PostLogoutRedirectURIsAttr] = keycloak.JoinPostLogoutRedirectURIs([]string{want[1], want[0]})
+	})
+	fake.resetCalls()
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if fake.callsContain("UpdateClient:" + uuid) {
+		t.Errorf("reordered post-logout redirect URIs triggered an update; calls = %v", fake.calls)
+	}
+
+	// A URI changed in the console is put back.
+	fake.editClient(uuid, func(c *keycloak.OIDCClient) {
+		c.Attributes[keycloak.PostLogoutRedirectURIsAttr] = "https://other.example.com/"
+	})
+	if _, err := reconcileClient(ctx, r, key); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := postLogout(); !sameStringSet(got, want) {
+		t.Errorf("post-logout redirect URIs after drift = %v, want %v", got, want)
+	}
+}
+
+func TestClientReconcileOmittedPostLogoutRedirectURIsLeftAlone(t *testing.T) {
+	if shared == nil {
+		t.Skip("envtest not provisioned")
+	}
+	ctx := context.Background()
+	const ns = "kc-client-post-logout-omitted"
+	key := newSettingsClient(t, ctx, ns, func(s *keycloakv1alpha1.ClientSpec) {
+		s.Adopt = true
+	})
+
+	fake := newFakeClient()
+	fake.seedClient(settingsClientID(ns), "plr-uuid")
+	fake.editClient("plr-uuid", func(c *keycloak.OIDCClient) {
+		c.Attributes = map[string]string{keycloak.PostLogoutRedirectURIsAttr: "https://console.example.com/"}
+	})
+	r, _ := newClientReconciler(fake, ns)
+	reconcileClientToSteady(t, ctx, r, key)
+
+	if got := fake.clientObject("plr-uuid").Attributes[keycloak.PostLogoutRedirectURIsAttr]; got != "https://console.example.com/" {
+		t.Errorf("post-logout redirect URIs = %q, want the console value left alone", got)
+	}
+}

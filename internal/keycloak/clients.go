@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // RawClient is a Keycloak ClientRepresentation kept as an opaque field map so a
@@ -172,6 +173,27 @@ const PKCECodeChallengeMethodAttr = "pkce.code.challenge.method"
 
 // PKCEMethodS256 is the SHA-256 PKCE code-challenge method value.
 const PKCEMethodS256 = "S256"
+
+// PostLogoutRedirectURIsAttr is the Keycloak client-attribute key holding the
+// client's post-logout redirect URIs, joined with postLogoutRedirectURIsSeparator.
+const PostLogoutRedirectURIsAttr = "post.logout.redirect.uris"
+
+// postLogoutRedirectURIsSeparator separates the URIs in PostLogoutRedirectURIsAttr.
+const postLogoutRedirectURIsSeparator = "##"
+
+// JoinPostLogoutRedirectURIs encodes uris as the PostLogoutRedirectURIsAttr value.
+func JoinPostLogoutRedirectURIs(uris []string) string {
+	return strings.Join(uris, postLogoutRedirectURIsSeparator)
+}
+
+// SplitPostLogoutRedirectURIs decodes a PostLogoutRedirectURIsAttr value. An
+// empty value is no URIs.
+func SplitPostLogoutRedirectURIs(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, postLogoutRedirectURIsSeparator)
+}
 
 // ProtocolMapper is the subset of a client protocol-mapper representation the
 // reconcilers read back and create.

@@ -117,6 +117,18 @@ type ClientSpec struct {
 	// +listType=set
 	WebOrigins []string `json:"webOrigins,omitempty"`
 
+	// PostLogoutRedirectURIs are the URIs Keycloak may send a user back to after
+	// they sign out, when the client names one in its logout request. When
+	// omitted, the client's post-logout redirect URIs are left as they are in
+	// Keycloak.
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=2048
+	PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris,omitempty"`
+
 	// Description is free text propagated to the Keycloak client's native
 	// Description attribute. When omitted the client's description converges to
 	// empty (the reconciler sends the spec value unconditionally on update, so a
